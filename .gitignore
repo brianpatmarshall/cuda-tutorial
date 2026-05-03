@@ -1,0 +1,67 @@
+.cache/
+compile_commands.json
+.vscode/ipch/
+*.o
+*.obj
+
+
+i# Build directories
+build/
+cmake-build-*/
+out/
+bin/
+lib/
+
+# CMake
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+install_manifest.txt
+compile_commands.json
+CTestTestfile.cmake
+Testing/
+
+# CUDA generated files
+*.i
+*.ii
+*.gpu
+*.ptx
+*.cubin
+*.fatbin
+*.d
+*.tmp
+*.module
+
+# Compiled objects / binaries
+*.o
+*.obj
+*.lo
+*.slo
+*.a
+*.lib
+*.so
+*.dylib
+*.dll
+*.exe
+*.out
+
+# Debug symbols / logs
+*.pdb
+*.log
+
+# IDEs
+.vscode/
+.idea/
+*.user
+*.suo
+*.VC.db
+*.VC.VC.opendb
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# NVIDIA Nsight / Visual Studio CUDA artifacts
+*.opendb
+*.cache
