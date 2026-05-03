@@ -68,8 +68,10 @@ Quick reference for common laptop GPUs you might see in 2026:
 | RTX 30-series Mobile (3050, 3060, 3070, 3080 Ti…) | Ampere | `8.6` | Fully supported, current. |
 | RTX 40-series Mobile (4050, 4060, 4070, 4080, 4090) | Ada Lovelace | `8.9` | Fully supported, current. |
 | RTX 50-series Mobile (5060, 5070, 5080, 5090) | Blackwell | `12.0` | Fully supported, requires recent driver (≥570) and CUDA ≥12.8. |
+| **RTX Pro Mobile Blackwell (Pro 500 / 1000 / 2000 / 3000 / 4000 / 5000)** | **Blackwell (workstation)** | **`12.0`** | Fully supported. Requires driver ≥570 and **CUDA ≥12.8** (12.8 added sm_120 support). Use latest CUDA 13.x for best support. |
+| RTX Pro 6000 Blackwell (desktop workstation) | Blackwell (datacenter-derived) | `12.2` | Different chip from the mobile Pro line — uses sm_122. Driver ≥570, CUDA ≥12.8. |
 
-If your card isn't in this short list, the official page above is authoritative.
+If your card isn't in this short list, the official page above is authoritative. Note that NVIDIA's `developer.nvidia.com/cuda-gpus` page sometimes lags new releases by months — for very recent cards, cross-reference the model's launch architecture instead.
 
 ### 1.3 Is your GPU still supported?
 
@@ -421,12 +423,18 @@ cmake --build build
 build\vector_add.exe
 ```
 
-### Override the GPU architecture for your laptop card
+### GPU architecture — auto-detected by default
 
-The `CMakeLists.txt` in this repo defaults to `61` (Pascal, GTX 1050 Ti) since that's the desktop hardware it was scaffolded on. For a modern laptop GPU, override at configure time:
+The `CMakeLists.txt` defaults to `CMAKE_CUDA_ARCHITECTURES=native`, which queries the local GPU at configure time and picks the right compute capability automatically. So on a Blackwell laptop (e.g. **RTX Pro 1000 Blackwell**, sm_120) the same command above just works — no override needed:
 
 ```cmd
-cmake -S . -B build -G Ninja -DCMAKE_CUDA_ARCHITECTURES=86
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+```
+
+To pin a specific architecture (e.g. for cross-compiling, distributing a binary, or building on a machine without the target GPU present), override:
+
+```cmd
+cmake -S . -B build -G Ninja -DCMAKE_CUDA_ARCHITECTURES=120
 ```
 
 Common values:
@@ -438,9 +446,17 @@ Common values:
 | Ampere | `80` / `86` | A100 (80) / RTX 30-series (86) |
 | Ada | `89` | RTX 40-series |
 | Hopper | `90` | H100 |
-| Blackwell | `100` / `120` | RTX 50-series |
+| **Blackwell (consumer / Pro mobile)** | **`120`** | **RTX 50-series, RTX Pro Mobile Blackwell** |
+| Blackwell (Pro desktop) | `122` | RTX Pro 6000 Blackwell |
+| Special | `all-major` | Fat binary covering every major arch |
 
-Find yours at <https://developer.nvidia.com/cuda-gpus>.
+Find yours at <https://developer.nvidia.com/cuda-gpus> (or see §1.2 of this document).
+
+### CUDA Toolkit version — pick the latest your GPU supports
+
+For modern GPUs (Turing and newer) install the **latest CUDA 13.x** — `winget install --id Nvidia.CUDA` already does this. CUDA 13 has the newest nvcc, best Blackwell support, and current Nsight tooling.
+
+The Pascal-driven recommendation in `SETUP.md` (Linux) to pin CUDA 12.x **does not apply to this laptop** — Blackwell is fully supported by CUDA 13. Use 13.x unless you have a specific compatibility reason to stay on 12.x (e.g. a third-party library that hasn't been rebuilt against 13).
 
 ---
 
@@ -450,7 +466,7 @@ In an **x64 Native Tools** prompt:
 
 ```cmd
 nvidia-smi              :: driver visible, GPU listed
-nvcc --version          :: should report 12.x
+nvcc --version          :: should report 12.8 or newer (13.x recommended for Blackwell)
 ninja --version
 cmake --version         :: >= 3.24
 cl                      :: should print Microsoft C/C++ Compiler banner
