@@ -6,15 +6,120 @@ End-to-end setup notes for this project on **Windows 11**, mirroring `SETUP.md` 
 
 ---
 
-## 1. What you need to know first
+## 1. Hardware discovery — what GPU do you have?
+
+On a brand-new laptop, **do this first.** Don't install anything until you've confirmed:
+1. There is an NVIDIA GPU at all (some "gaming-looking" laptops are integrated-graphics-only).
+2. The exact model and architecture.
+3. That architecture is still supported by current NVIDIA drivers.
+4. How hybrid graphics is set up (most NVIDIA laptops have two GPUs).
+
+These steps **don't require any NVIDIA software** — Windows can identify the hardware on its own.
+
+### 1.1 Identify the GPU (five methods, pick whichever)
+
+**Method A — Task Manager (fastest, no clicks beyond opening it).**
+
+`Ctrl + Shift + Esc` → **Performance** tab → look in the left sidebar for **GPU 0**, **GPU 1**, etc. Each entry shows the model name in the top-right ("NVIDIA GeForce RTX 4060 Laptop GPU"). If you see two GPUs (e.g. "Intel Iris Xe" and an NVIDIA one), you have **hybrid graphics** — see §1.4.
+
+**Method B — Device Manager.**
+
+`Win + X` → *Device Manager* → expand **Display adapters**. Each adapter is listed by exact name. Right-click → *Properties* → *Details* tab → *Property: Hardware Ids* gives you the PCI vendor/device ID (`PCI\VEN_10DE&DEV_xxxx` — `10DE` is NVIDIA).
+
+**Method C — DirectX Diagnostic Tool (`dxdiag`).**
+
+`Win + R` → type `dxdiag` → Enter → **Display** tab(s). Shows manufacturer, chip type, driver version, and DirectX feature level. Multiple Display tabs = multiple GPUs.
+
+**Method D — System Information (`msinfo32`).**
+
+`Win + R` → `msinfo32` → *Components → Display*. Same data, exportable to a text file via *File → Save*.
+
+**Method E — PowerShell (scriptable, works in a script or remote session).**
+
+```powershell
+Get-CimInstance Win32_VideoController |
+  Select-Object Name, AdapterRAM, DriverVersion, VideoProcessor |
+  Format-Table -AutoSize
+```
+
+Or, by PCI ID (works even when no driver is bound):
+```powershell
+Get-PnpDevice -Class Display |
+  Select-Object FriendlyName, InstanceId, Status
+```
+The `InstanceId` contains the `VEN_10DE&DEV_xxxx` segment — the four hex digits after `DEV_` are the device ID. Cross-reference at <https://pci-ids.ucw.cz/read/PC/10de> if Windows shows only "Microsoft Basic Display Adapter" (i.e. no driver yet).
+
+### 1.2 Look up the compute capability
+
+Once you have the model name, look it up at NVIDIA's official list: <https://developer.nvidia.com/cuda-gpus>.
+
+You'll get a **compute capability** number (like `8.9`). The integer form (`89`) is what you pass to CMake as `-DCMAKE_CUDA_ARCHITECTURES=89`.
+
+Quick reference for common laptop GPUs you might see in 2026:
+
+| Marketing name | Architecture | Compute capability | Driver-support status |
+|---|---|---|---|
+| GTX 9-series Mobile (940M, 950M, 960M…) | Maxwell | `5.0` / `5.2` | **Legacy** — supported only by the 470 LTS driver. CUDA 12 dropped Maxwell. |
+| GTX 10-series Mobile (1050, 1050 Ti, 1060, 1070, 1080) | Pascal | `6.1` | Supported through driver branch **580** (LTS); **dropped in 590+**. CUDA 13 dropped Pascal — stay on CUDA 12.x. |
+| MX 150 / 250 / 350 | Pascal | `6.1` | Same as above. |
+| GTX 16-series (1650, 1660 Ti Mobile) | Turing | `7.5` | Fully supported, current. |
+| RTX 20-series Mobile (2060, 2070, 2080) | Turing | `7.5` | Fully supported, current. |
+| MX 450 / 550 | Turing | `7.5` | Fully supported. |
+| RTX 30-series Mobile (3050, 3060, 3070, 3080 Ti…) | Ampere | `8.6` | Fully supported, current. |
+| RTX 40-series Mobile (4050, 4060, 4070, 4080, 4090) | Ada Lovelace | `8.9` | Fully supported, current. |
+| RTX 50-series Mobile (5060, 5070, 5080, 5090) | Blackwell | `12.0` | Fully supported, requires recent driver (≥570) and CUDA ≥12.8. |
+
+If your card isn't in this short list, the official page above is authoritative.
+
+### 1.3 Is your GPU still supported?
+
+Two questions to answer:
+
+**A. Is the architecture supported by the current driver branches?**
+
+| Architecture | Current driver support (2026) | What this means for you |
+|---|---|---|
+| Kepler (older 6/7-series) | None — last in driver 470 (legacy, 2024 EOL) | CUDA dev not practical; consider CPU-only or upgrade hardware. |
+| Maxwell | Driver 470 LTS only | OK for legacy CUDA 11.x. Skip CUDA 12+. |
+| **Pascal** (10-series) | Driver branches 535–580 (580 is LTS through ~2028); **dropped in 590+** | Use CUDA 12.x and pin to driver ≤580. |
+| Turing, Ampere, Ada, Hopper, Blackwell | All current branches | No restrictions; use the latest CUDA. |
+
+**B. Is it CUDA-capable at all?**
+
+Almost every GeForce, Quadro, RTX, and Tesla card from the last decade is. The exceptions are GeForce **MX 110/130** rebranded older Maxwell parts and very old GT-series chips. The list at <https://developer.nvidia.com/cuda-gpus> is definitive — if your card is listed, CUDA works on it.
+
+### 1.4 Hybrid graphics (NVIDIA Optimus) — laptops only
+
+This trips up almost everyone the first time. Most NVIDIA laptops have **two** GPUs:
+- An **integrated GPU** (Intel Iris Xe or AMD Radeon Graphics) that drives the desktop and runs background apps to save battery.
+- A **discrete NVIDIA GPU** that activates only for graphics-heavy or compute apps.
+
+Implications for CUDA:
+
+- A CUDA program will use the discrete NVIDIA GPU automatically — that's where the CUDA driver is. You don't have to do anything special at runtime.
+- But Windows may keep the discrete GPU **powered down** until something asks for it. `nvidia-smi` waking it up takes a second or two; that's normal.
+- Some IDEs / editors get pinned to the integrated GPU by Windows' graphics preferences. If you want VS Code or Nsight to use the NVIDIA GPU (e.g. for hardware-accelerated rendering), set it manually:
+  *Settings → System → Display → Graphics → Browse → pick the app → Options → **High performance***.
+
+To **confirm both GPUs are visible** without installing the driver:
+
+```powershell
+Get-CimInstance Win32_VideoController | Select-Object Name, AdapterRAM
+```
+
+You should see two rows: one Intel/AMD, one NVIDIA. If you see only the integrated one, the NVIDIA part is either disabled in BIOS, broken, or this is a non-hybrid laptop.
+
+To **check BIOS** if the NVIDIA GPU is missing entirely: reboot, enter BIOS/UEFI setup (usually `F2`, `Del`, or `Esc` at boot), look for *Graphics*, *Display*, or *MUX Switch* settings. Some gaming laptops have a "discrete GPU only" mode that disables the integrated GPU and routes the display through the NVIDIA card directly — better for CUDA work, worse for battery.
+
+### 1.5 Basic environment checklist
 
 | Question | Answer |
 |---|---|
-| Which GPU? | Run `nvidia-smi` (after driver install) or look in *Device Manager → Display adapters*. |
-| Compute capability? | Look up your card at <https://developer.nvidia.com/cuda-gpus>. Common laptop values: Turing `75`, Ampere `86`, Ada `89`, Blackwell `120`. |
-| Disk space? | ~10 GB total — VS Build Tools alone is ~6 GB; CUDA toolkit ~3 GB. |
-| Admin? | Yes — installer needs to install drivers and put MSVC into Program Files. |
+| Disk space? | ~10 GB total — VS Build Tools ~6 GB; CUDA toolkit ~3 GB. |
+| Admin account? | Yes — installer needs to write to Program Files and load drivers. |
 | Internet? | Yes — winget pulls everything from official sources. |
+| Windows up to date? | Recommended — *Settings → Windows Update* before installing the NVIDIA driver. |
+| `winget` works? | Test in PowerShell: `winget --version`. If "command not found," install **App Installer** from the Microsoft Store. |
 
 ---
 
